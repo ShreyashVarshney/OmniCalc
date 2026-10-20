@@ -8,7 +8,7 @@ import UnitConverter from './components/UnitConverter';
 import ProgrammerKeypad from './components/ProgrammerKeypad';
 import HistoryDrawer from './components/HistoryDrawer';
 import StatusModal from './components/StatusModal';
-import { evaluateExpression, previewExpression } from './utils/calculator';
+import { evaluateExpression, previewExpression, formatPrecision } from './utils/calculator';
 import { playSound } from './utils/sound';
 import { api } from './utils/api';
 
@@ -133,6 +133,14 @@ export default function App() {
       }
     }
 
+    // If expression ends with %, ), or constants, auto-insert multiplication operand
+    const trimmed = expression.trim();
+    if (/[%\)\π\e\φ]$/.test(trimmed)) {
+      setExpression((prev) => `${prev} × ${digit === '.' ? '0.' : digit}`);
+      setResult(digit === '.' ? '0.' : digit);
+      return;
+    }
+
     const isNewOperand = /[\+\−\×\÷\*\/\^]\s*$/.test(expression);
     setExpression((prev) => (prev === '0' && digit !== '.' ? digit : prev + digit));
     setResult((prev) => (isNewOperand || prev === '0' ? (digit === '.' ? '0.' : digit) : prev + digit));
@@ -142,19 +150,43 @@ export default function App() {
     playSound('operator', isMuted);
     setJustCalculated(false);
 
-    // If starting with an operator, use current result
-    if (!expression || expression === '') {
-      setExpression(`${result} ${op} `);
+    // If expression is empty or whitespace:
+    if (!expression || expression.trim() === '') {
+      // Use previous valid result as the first operand if available
+      if (result && !['Error', 'Infinity', '-Infinity', 'NaN'].includes(result) && !isNaN(Number(result))) {
+        setExpression(`${result} ${op} `);
+        return;
+      }
+      // If no prior result, only + or - can initialize (as 0 + or 0 -)
+      if (op === '+' || op === '−') {
+        setExpression(`0 ${op} `);
+      }
+      return; // Binary operators (*, /, ^) cannot start without an operand
+    }
+
+    const trimmed = expression.trim();
+
+    // If expression ends with an opening parenthesis '(', operators cannot be used as operands
+    if (trimmed.endsWith('(')) {
+      if (op === '−' || op === '-') {
+        setExpression((prev) => prev + '-');
+      }
       return;
     }
 
-    // Replace trailing operator if consecutive
-    if (/[\+\−\×\÷\*\/\^]\s*$/.test(expression)) {
-      setExpression((prev) => prev.replace(/[\+\−\×\÷\*\/\^]\s*$/, `${op} `));
+    // If expression ends with a dangling decimal point, clean it
+    let clean = expression;
+    if (/\.\s*$/.test(clean)) {
+      clean = clean.replace(/\.\s*$/, '');
+    }
+
+    // If expression ends with an operator (+, -, *, /, ^), replace it instead of stacking
+    if (/[\+\−\×\÷\*\/\^]\s*$/.test(clean)) {
+      setExpression(clean.replace(/[\+\−\×\÷\*\/\^]\s*$/, `${op} `));
       return;
     }
 
-    setExpression((prev) => `${prev} ${op} `);
+    setExpression(`${clean} ${op} `);
   };
 
   const handleClear = () => {
@@ -198,9 +230,9 @@ export default function App() {
     const lastChar = expression.trim().slice(-1);
 
     // Auto-decide between '(' or ')'
-    if (openCount > closeCount && /[0-9\π\e\φ\)]/.test(lastChar)) {
+    if (openCount > closeCount && /[0-9\π\e\φ\)%]/.test(lastChar)) {
       setExpression((prev) => prev + ')');
-    } else if (/[0-9\π\e\φ\)]/.test(lastChar)) {
+    } else if (/[0-9\π\e\φ\)%]/.test(lastChar)) {
       setExpression((prev) => prev + ' × (');
     } else {
       setExpression((prev) => prev + '(');
@@ -209,13 +241,16 @@ export default function App() {
 
   const handleNegate = () => {
     playSound('click', isMuted);
-    if (!expression || expression === '0') return;
+    if (!expression || expression === '0' || expression === 'Error') return;
 
     // Toggle negation on current result/expression
     if (justCalculated) {
-      const negated = String(-1 * Number(result));
-      setExpression(negated);
-      setResult(negated);
+      const num = Number(result);
+      if (!isNaN(num)) {
+        const negated = String(-1 * num);
+        setExpression(negated);
+        setResult(negated);
+      }
       return;
     }
 
@@ -228,15 +263,54 @@ export default function App() {
 
   const handlePercent = () => {
     playSound('operator', isMuted);
-    setJustCalculated(false);
+
+    // If just calculated a valid number, convert it to percentage immediately
+    if (justCalculated) {
+      if (result && !['Error', 'Infinity', '-Infinity', 'NaN'].includes(result)) {
+        const num = parseFloat(result);
+        if (!isNaN(num)) {
+          const pctVal = formatPrecision(num / 100);
+          setExpression(`${result}%`);
+          setResult(pctVal);
+          setJustCalculated(false);
+          return;
+        }
+      }
+      return;
+    }
+
+    // Disallow percent as the first operand if expression is empty
+    if (!expression || expression.trim() === '') {
+      if (result && !['Error', 'Infinity', '-Infinity', 'NaN', '0'].includes(result)) {
+        const num = parseFloat(result);
+        if (!isNaN(num)) {
+          const pctVal = formatPrecision(num / 100);
+          setExpression(`${result}%`);
+          setResult(pctVal);
+          return;
+        }
+      }
+      return; // Do not allow stray % as operand
+    }
+
+    const trimmed = expression.trim();
+    // % can ONLY be placed after a valid operand (number, constant, or closing parenthesis)
+    if (!/[0-9\)\π\e\φ]$/.test(trimmed)) {
+      return; // Disallow operator or invalid symbol as operand for %
+    }
+
     setExpression((prev) => prev + '%');
+    const evalPreview = evaluateExpression(trimmed + '%', angleUnit);
+    if (!evalPreview.error) {
+      setResult(evalPreview.result);
+    }
   };
 
   const handleConstant = (sym) => {
     playSound('click', isMuted);
     setJustCalculated(false);
     const lastChar = expression.trim().slice(-1);
-    if (/[0-9\π\e\φ]/.test(lastChar)) {
+    if (/[0-9\π\e\φ\)]/.test(lastChar)) {
       setExpression((prev) => `${prev} × ${sym}`);
     } else {
       setExpression((prev) => `${prev}${sym}`);
@@ -247,29 +321,39 @@ export default function App() {
     playSound('operator', isMuted);
     setJustCalculated(false);
 
+    const trimmed = expression.trim();
+
+    if (fn === 'factorial') {
+      // Factorial ! requires a valid operand preceding it
+      if (!/[0-9\)\π\e\φ]$/.test(trimmed)) {
+        return; // Disallow ! on operator or empty expression
+      }
+      setExpression((prev) => `${prev}!`);
+      return;
+    }
+
     if (fn === 'square') {
       setExpression((prev) => (prev ? `(${prev})^2` : '0^2'));
+      return;
     } else if (fn === 'cube') {
       setExpression((prev) => (prev ? `(${prev})^3` : '0^3'));
+      return;
     } else if (fn === 'pow') {
+      if (!trimmed || /[\+\−\×\÷\*\/\^\(]\s*$/.test(trimmed)) return;
       setExpression((prev) => `${prev}^`);
-    } else if (fn === 'sqrt') {
-      setExpression((prev) => `${prev}sqrt(`);
-    } else if (fn === 'cbrt') {
-      setExpression((prev) => `${prev}cbrt(`);
+      return;
     } else if (fn === 'reciprocal') {
       setExpression((prev) => (prev ? `1/(${prev})` : '1/'));
-    } else if (fn === 'abs') {
-      setExpression((prev) => `${prev}abs(`);
-    } else if (fn === 'factorial') {
-      setExpression((prev) => `${prev}!`);
-    } else if (fn === 'exp') {
-      setExpression((prev) => `${prev}e^(`);
-    } else if (fn === 'pow10') {
-      setExpression((prev) => `${prev}10^(`);
+      return;
+    }
+
+    // Functions with open paren: sqrt, cbrt, abs, exp, pow10, sin, cos, tan, etc.
+    const fnName = fn === 'exp' ? 'e^(' : fn === 'pow10' ? '10^(' : `${fn}(`;
+    // If preceded by a number, constant, %, or ), insert implicit multiplication
+    if (/[0-9\)\%\π\e\φ]$/.test(trimmed)) {
+      setExpression((prev) => `${prev} × ${fnName}`);
     } else {
-      // Trig & log functions: sin(, cos(, tan(, etc.
-      setExpression((prev) => `${prev}${fn}(`);
+      setExpression((prev) => `${prev}${fnName}`);
     }
   };
 
@@ -277,7 +361,19 @@ export default function App() {
   const handleEquals = async () => {
     if (!expression || expression.trim() === '') return;
 
-    const evaluated = evaluateExpression(expression, angleUnit);
+    let cleanExpr = expression.trim();
+    // Clean trailing operators and dangling decimal points
+    cleanExpr = cleanExpr.replace(/[\+\−\×\÷\*\/\^\.\s]+$/, '');
+    if (!cleanExpr) return;
+
+    // Auto-close any unclosed parentheses
+    const openCount = (cleanExpr.match(/\(/g) || []).length;
+    const closeCount = (cleanExpr.match(/\)/g) || []).length;
+    if (openCount > closeCount) {
+      cleanExpr += ')'.repeat(openCount - closeCount);
+    }
+
+    const evaluated = evaluateExpression(cleanExpr, angleUnit);
 
     if (evaluated.error) {
       playSound('error', isMuted);
@@ -287,13 +383,14 @@ export default function App() {
     }
 
     playSound('equals', isMuted);
+    setExpression(cleanExpr);
     setResult(evaluated.result);
     setJustCalculated(true);
 
     // Save to MERN backend (MongoDB)
     try {
       const calcData = {
-        expression: expression.trim(),
+        expression: cleanExpr,
         result: evaluated.result,
         type: activeMode === 'scientific' ? 'scientific' : 'standard',
       };
@@ -431,9 +528,12 @@ export default function App() {
       } else if (key === '/') {
         e.preventDefault();
         handleOperator('÷');
-      } else if (key === '%' || key === '^') {
+      } else if (key === '%') {
         e.preventDefault();
-        handleOperator(key);
+        handlePercent();
+      } else if (key === '^') {
+        e.preventDefault();
+        handleOperator('^');
       } else if (key === '(' || key === ')') {
         e.preventDefault();
         handleParentheses();

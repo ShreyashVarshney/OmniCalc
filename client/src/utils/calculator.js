@@ -106,8 +106,26 @@ export const evaluateExpression = (rawExpr, angleUnit = 'deg') => {
   // Convert ^ to **
   expr = expr.replace(/\^/g, '**');
 
-  // Convert percentages: e.g. "50%" -> "(50/100)"
+  // Convert percentages on parenthesized groups: e.g. "(10 + 20)%" -> "((10 + 20)/100)"
+  expr = expr.replace(/\(([^\(\)]+)\)%/g, '(($1)/100)');
+  // Convert percentages on numbers: e.g. "50%" -> "(50/100)"
   expr = expr.replace(/(\d+(\.\d+)?)%/g, '($1/100)');
+
+  // Reject stray percentage operators without an operand
+  if (/%/.test(expr)) {
+    return { result: 'Error', numeric: NaN, error: 'Operator cannot be used without an operand' };
+  }
+
+  // Reject invalid leading binary operators (*, /, ^)
+  if (/^\s*[\*\/^]/.test(expr)) {
+    return { result: 'Error', numeric: NaN, error: 'Operator cannot be used without an operand' };
+  }
+
+  // Reject invalid consecutive binary operators (e.g., "* *", "/ /", "+ *")
+  const opCheck = expr.replace(/\*\*/g, '^').replace(/\s+/g, '');
+  if (/[\+\*\/^]{2,}/.test(opCheck)) {
+    return { result: 'Error', numeric: NaN, error: 'Consecutive operators are not allowed' };
+  }
 
   // Validate allowed characters for safety (whitelist characters)
   const safeRegex = /[0-9+\-*/().,%^ \t\r\n]|sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|ln|log|log10|log2|sqrt|cbrt|abs|factorial|fact|pow|Infinity|NaN/g;
