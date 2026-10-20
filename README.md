@@ -85,10 +85,27 @@ npm run dev
 - **Physical Device Haptics**: Automatically triggers responsive vibration pulses on key taps via `navigator.vibrate`.
 - **Landscape Auto-Expansion**: Rotate your phone sideways to automatically expand into full scientific side-by-side mode!
 
-### 4. MongoDB Configuration (Optional)
+### 4. 🌐 Share with Anyone Worldwide (Cloudflare Tunnel)
+You can share OmniCalc with friends in any city or open it anywhere over mobile data without opening router ports or configuring firewall rules:
+
+1. **Start the Unified Server** in one terminal:
+   ```bash
+   npm start
+   ```
+2. **Start the Cloudflare Tunnel** in a second terminal:
+   ```bash
+   npm run tunnel
+   ```
+3. Copy the generated `https://xxxx.trycloudflare.com` URL and send it to your friend!
+   - Full HTTPS encryption
+   - Zero login / zero password prompts
+   - Both frontend and MongoDB backend run over the single secure link
+
+### 5. MongoDB Configuration (Optional)
 By default, the server connects to your local MongoDB service at `mongodb://127.0.0.1:27017/calculator`.
 
 To use **MongoDB Atlas** (Cloud), update `server/.env`:
 ```env
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/calculator?retryWrites=true&w=majority
 ```
+
