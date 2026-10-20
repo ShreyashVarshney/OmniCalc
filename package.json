@@ -1,0 +1,15 @@
+{
+  "name": "mern-calculator",
+  "version": "1.0.0",
+  "description": "Full-stack MERN Calculator Application with MongoDB Persistence",
+  "scripts": {
+    "start": "node server/index.js",
+    "serve": "node server/index.js",
+    "dev": "concurrently \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "install-all": "npm --prefix server install && npm --prefix client install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
